@@ -13,7 +13,7 @@ total_cards = len(cards) - 10 # 9 SR match cards (#10001, ..., #10009) + #0
 OUTPUT_MODE = True
 SCALED_OUTPUT_PATH_PREFIX = 'output/scaled-'
 JSON_OUTPUT_PATH_PREFIX = 'output/'
-PEAK_THESHOLD_RATIO = 0.96
+PEAK_THRESHOLD_RATIO = 0.96
 PEAK_COMPRESSION_LENGTH = 80
 IMAGE_SPACE_SCALER = 134
 IMAGE_CONVERSION_SCALER = 1128 / 846
@@ -37,14 +37,14 @@ def horizontal_line_sum(img, pixels, ratio=4):
         result.append(curr)
     return result
 
-def find_peaks(sum_vec, theshold_ratio = PEAK_THESHOLD_RATIO):
+def find_peaks(sum_vec, threshold_ratio = PEAK_THRESHOLD_RATIO):
     peaks = []
     last = -999999
-    theshold = max(sum_vec) * theshold_ratio
+    threshold = max(sum_vec) * threshold_ratio
     for i in range(len(sum_vec)):
         curr = sum_vec[i]
         if curr < last:
-            if last > theshold:
+            if last > threshold:
                 peaks.append([i-1, last])
         last = curr
     return peaks
@@ -52,10 +52,10 @@ def find_peaks(sum_vec, theshold_ratio = PEAK_THESHOLD_RATIO):
 def compress_peaks(peaks_vec):
     res = []
     last = peaks_vec[0]
-    theshold = PEAK_COMPRESSION_LENGTH
+    threshold = PEAK_COMPRESSION_LENGTH
     i_s = []
     for i in range(len(peaks_vec)):
-        if peaks_vec[i][0] - last[0] > theshold:
+        if peaks_vec[i][0] - last[0] > threshold:
             res.append(last)
             i_s.append(i)
         last = peaks_vec[i]
