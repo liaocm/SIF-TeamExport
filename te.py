@@ -19,6 +19,12 @@ IMAGE_SPACE_SCALER = 134
 IMAGE_CONVERSION_SCALER = 1128 / 846
 #------ END CONFIG ------#
 
+#-------- GLOBALS --------#
+normals = []
+rankups = []
+resolution = 4
+#------ END GLOBALS ------#
+
 def vertical_line_sum(img, pixels, ratio=4, scan_ratio = 0.0):
     result = [0 for _ in range(int(img.size[0] * scan_ratio))]
     for i in range(int(img.size[0] * scan_ratio), img.size[0]):
@@ -110,8 +116,8 @@ def get_targets(img, pixels):
 
 def compare_card_at(pixels, x, y, card):
     acc = 0
-    for i in range(0, 128, 3):
-        for j in range(0, 128, 3):
+    for i in range(0, 128, resolution):
+        for j in range(0, 128, resolution):
             r_diff = abs(pixels[i+x, j+y][0] - card[i, j][0])
             g_diff = abs(pixels[i+x, j+y][1] - card[i, j][1])
             b_diff = abs(pixels[i+x, j+y][2] - card[i, j][2])
@@ -183,7 +189,8 @@ def match_cards(pixels, targets, rarity_set = {'UR', 'SSR', 'SR'}):
     start = time.time()
     print("Matching... ")
     for point in targets:
-        print('{0} / {1}'.format(curr, len(targets)))
+        sys.stdout.write('\r{0} / {1}'.format(curr, len(targets)))
+        sys.stdout.flush()
         point_color = get_icon_color(pixels, point[0], point[1])
         point_rankup = get_icon_rankup(pixels, point[0], point[1])
         curr_card = match_card_at(pixels, point[0], point[1], 
@@ -191,42 +198,53 @@ def match_cards(pixels, targets, rarity_set = {'UR', 'SSR', 'SR'}):
         if curr_card[1] != 0:
             team.append(curr_card)
         curr += 1
-    print('Time elapsed: {0} seconds'.format(time.time() - start))
+    print('\nDone.\nTime elapsed: {0} seconds'.format(time.time() - start))
     return team
 
-normals = []
-rankups = []
 def preload_cards():
   for i in range(1, total_cards + 1):
     normals.append(
         Image.open('static/icon/normal/{0}.png'.format(str(i))).load())
     rankups.append(
         Image.open('static/icon/rankup/{0}.png'.format(str(i))).load())
+    progress = int(i / total_cards * 100)
+    sys.stdout.write("\r%d%%" % progress)
+    sys.stdout.flush()
+  sys.stdout.write("\n")
 
-def main(path, rarity_set):
+def main(path, rarity_set, out=False):
   try:
+    loading_t = time.time()
+    print("Loading cards...")
     preload_cards()
-  except e as BaseException:
+    print("Done.")
+    print("Time elapsed: {0} seconds".format(time.time() - loading_t))
+  except BaseException:
     sys.exit("Error loading static icon data.")
     return
 
   try:
     img = Image.open(path)
     pixels = img.load()
-  except e as BaseException:
+  except BaseException:
     sys.exit("Error when loading the image.")
     return
 
+  preprocessing_t = time.time()
+  print("Preprocessing image...")
   output_path = SCALED_OUTPUT_PATH_PREFIX + os.path.basename(path)
   scaled_img = rescale_image(img, pixels, OUTPUT_MODE, output_path = output_path)
+  print("Done.")
+  print("Time elapsed: {0} seconds".format(time.time() - preprocessing_t))
   scaled_pixels = scaled_img.load()
   targets = get_targets(scaled_img, scaled_pixels)
   team = match_cards(scaled_pixels, targets, rarity_set)
 
   # Print out the team
-  print("")
-  print("===========OUTPUT============")
-  print("")
+  if out:
+    print("")
+    print("===========OUTPUT============")
+    print("")
   i = 0
   file_output = ""
   for member in team:
@@ -240,14 +258,15 @@ def main(path, rarity_set):
                 cards[str(member[1])]['name']
               )
     file_output += out_str + "\n"
-    print(out_str)
+    if out:
+      print(out_str)
     i += 1
 
   try:
     file = io.open(JSON_OUTPUT_PATH_PREFIX + os.path.basename(path) + ".out", 'w')
     file.write(file_output)
     file.close()
-  except e as BaseException:
+  except BaseException:
     sys.exit("Error writing output file.")
 
 if __name__ == '__main__':
@@ -258,7 +277,17 @@ if __name__ == '__main__':
   parser.add_argument("--sr", help="Includes SR cards in the matching process.", action="store_true")
   parser.add_argument("--r", help="Includes R cards in the matching process.", action="store_true")
   parser.add_argument("--n", help="Includes N cards in the matching process.", action="store_true")
+  parser.add_argument("--print-out", help="Print out the result.", action="store_true")
+  parser.add_argument("--res", help="Calculate proximity vector for every RES pixels. RES should be an integer from 1 to 8, inclusive. Defaults to 4; the highest setting is 1 (most accurate, slowest).", action="store")
   args = parser.parse_args()
+
+  if args.res:
+    try:
+      resolution = int(args.res)
+    except BaseException:
+      sys.exit("RES must be an integer between 1 and 8.")
+    if resolution <= 0 or resolution > 8:
+      sys.exit("RES must be an integer between 1 and 8.")
 
   rarity_set = set()
   if args.ur:
@@ -275,4 +304,4 @@ if __name__ == '__main__':
   if len(rarity_set) == 0:
     sys.exit("Must specify at least one rarity!")
 
-  main(args.file, rarity_set)
+  main(args.file, rarity_set, args.print_out)
