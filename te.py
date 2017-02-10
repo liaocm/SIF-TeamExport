@@ -110,8 +110,8 @@ def get_targets(img, pixels):
 
 def compare_card_at(pixels, x, y, card):
     acc = 0
-    for i in range(128):
-        for j in range(128):
+    for i in range(0, 128, 3):
+        for j in range(0, 128, 3):
             r_diff = abs(pixels[i+x, j+y][0] - card[i, j][0])
             g_diff = abs(pixels[i+x, j+y][1] - card[i, j][1])
             b_diff = abs(pixels[i+x, j+y][2] - card[i, j][2])
