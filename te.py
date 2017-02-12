@@ -277,6 +277,7 @@ if __name__ == '__main__':
   parser.add_argument("--sr", help="Includes SR cards in the matching process.", action="store_true")
   parser.add_argument("--r", help="Includes R cards in the matching process.", action="store_true")
   parser.add_argument("--n", help="Includes N cards in the matching process.", action="store_true")
+  parser.add_argument("--all", help="Includes all cards in the matching process.", action="store_true")
   parser.add_argument("--print-out", help="Print out the result.", action="store_true")
   parser.add_argument("--res", help="Calculate proximity vector for every RES pixels. RES should be an integer from 1 to 8, inclusive. Defaults to 4; the highest setting is 1 (most accurate, slowest).", action="store")
   args = parser.parse_args()
@@ -290,6 +291,8 @@ if __name__ == '__main__':
       sys.exit("RES must be an integer between 1 and 8.")
 
   rarity_set = set()
+  if args.all:
+    rarity_set = {'N', 'R', 'SR', 'SSR', 'UR'}
   if args.ur:
     rarity_set.add("UR")
   if args.ssr:
