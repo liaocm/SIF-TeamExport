@@ -1,3 +1,5 @@
 static/icon/*
 __pycache__
 output/*
+legacy-te.py
+

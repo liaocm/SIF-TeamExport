@@ -3,6 +3,9 @@
 ## Prerequisites:
 
 Python 3.5+
+
+numpy for Python 3+
+
 PIL (Pillow)
 
 icon folder from SIFStatic: https://github.com/iebb/SIFStatic
@@ -21,4 +24,4 @@ $ python3 te.py --ur test/test-ipad-unscaled.png
 $ python3 te.py --ur test/test-scaled.png
 
 
-The expected result is in the test/ folder.
+The expected result is in the test/test-output folder.
