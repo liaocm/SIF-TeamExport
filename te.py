@@ -17,6 +17,7 @@ PEAK_THRESHOLD_RATIO = 0.96
 PEAK_COMPRESSION_LENGTH = 80
 IMAGE_SPACE_SCALER = 134
 IMAGE_CONVERSION_SCALER = 1128 / 846
+TEAM_IMG_CROP_RATIOS = [0.07, 0.27, 0.93, 0.42] # Dark Magic
 #------ END CONFIG ------#
 
 #-------- GLOBALS --------#
@@ -24,6 +25,7 @@ normals = []
 rankups = []
 resolution = 4
 total_time_elapsed = 0
+debug = False
 #------ END GLOBALS ------#
 
 def vertical_line_sum(img, pixels, ratio=4, scan_ratio = 0.0):
@@ -69,14 +71,14 @@ def calculate_scale(compressed, num_items = 4):
     return IMAGE_SPACE_SCALER / avg * 4
 
 # First, rescale image.
-def rescale_image(img, pixels, output_mode = False, _scan_ratio = 0.1, output_path = 'output/default.png'):
+def rescale_image(img, pixels, output_mode = False, _ratio = 4, _scan_ratio = 0.1, no_crop = False, output_path = 'output/default.png'):
     scale = calculate_scale(
         compress_peaks(
-            find_peaks(vertical_line_sum(img, pixels, scan_ratio=_scan_ratio))))
+            find_peaks(vertical_line_sum(img, pixels, ratio=_ratio, scan_ratio=_scan_ratio))))
     scaled_img = img.resize((int(img.size[0]*scale),int(img.size[1]*scale)), 
                             PIL.Image.ANTIALIAS)
     # crop the image if it is too long
-    if scaled_img.size[0] / scaled_img.size[1] >= 1.5:
+    if not no_crop and scaled_img.size[0] / scaled_img.size[1] >= 1.5:
         new_width = int(IMAGE_CONVERSION_SCALER * scaled_img.size[1])
         scaled_img = scaled_img.crop(((scaled_img.size[0]-new_width)//4, 
                                      0, 
@@ -108,6 +110,15 @@ def get_targets(img, pixels):
     targets = [[int(start + x * havg), int(vertical_breaks[y])] for x in range(8) for y in range(4)]
     return targets
 
+def get_team_targets(img, pixels):
+    # Precondition: the image is scaled.
+    # Figure out the start and end point of each team member.
+    # This will be a 8 x 1 grid
+
+    horizontal_breaks = compress_peaks(find_peaks(vertical_line_sum(img, pixels)))
+    vertical_break = compress_peaks(find_peaks(horizontal_line_sum(img, pixels)))[0]
+    return [[x, vertical_break] for x in horizontal_breaks]
+
 def compare_card_at(pixels, x, y, card):
     idx = np.ix_(range(y, y+128, resolution),
                 range(x, x+128, resolution),
@@ -131,16 +142,19 @@ def match_card_at(pixels, x, y, attr, ranked_up = 0, rarity_set = {'UR', 'SSR', 
             continue
         if cards[str(n)]['attribute'] != attr:
             continue
-        if ranked_up == 0:
-            normal_val = compare_card_at(pixels, x, y, normals[n-1])
-            if normal_val < best_val:
-                best_val = normal_val
-                best = [0, n]
-        if ranked_up == 1:
+
+        if ranked_up == 1 or ranked_up == -1:
             rankup_val = compare_card_at(pixels, x, y, rankups[n-1])
             if rankup_val < best_val:
                 best_val = rankup_val
                 best = [1, n]
+
+        if ranked_up == 0 or ranked_up == -1:
+            normal_val = compare_card_at(pixels, x, y, normals[n-1])
+            if normal_val < best_val:
+                best_val = normal_val
+                best = [0, n]
+
     return best
 
 def get_icon_color(pixels, x, y):
@@ -173,17 +187,20 @@ def get_icon_rankup(pixels, x, y):
         return 1
     return 0
 
-def match_cards(pixels, targets, rarity_set = {'UR', 'SSR', 'SR'}):
-    global total_time_elapsed
+def match_cards(pixels, targets, rarity_set = {'UR', 'SSR', 'SR'}, no_idolized_match=False):
+    global total_time_elapsed, debug
     team = []
     curr = 1
     start = time.time()
-    print("Matching... ")
+    debug and print("Matching... ")
     for point in targets:
-        sys.stdout.write('\r{0} / {1}'.format(curr, len(targets)))
-        sys.stdout.flush()
+        debug and sys.stdout.write('\r{0} / {1}'.format(curr, len(targets)))
+        debug and sys.stdout.flush()
         point_color = get_icon_color(pixels, point[0], point[1])
-        point_rankup = get_icon_rankup(pixels, point[0], point[1])
+        if not no_idolized_match:
+          point_rankup = get_icon_rankup(pixels, point[0], point[1])
+        else:
+          point_rankup = -1
         curr_card = match_card_at(pixels, point[0], point[1], 
                                   point_color, point_rankup, rarity_set)
         if curr_card[1] != 0:
@@ -191,30 +208,42 @@ def match_cards(pixels, targets, rarity_set = {'UR', 'SSR', 'SR'}):
         curr += 1
     time_elapsed = time.time() - start
     total_time_elapsed += time_elapsed
-    print('\nDone.\nTime elapsed: {0} seconds'.format(time_elapsed))
+    debug and print('\nDone.\nTime elapsed: {0} seconds'.format(time_elapsed))
     return team
 
 def preload_cards():
+  global debug
   for i in range(1, total_cards + 1):
     normals.append(
         np.array(Image.open('static/icon/normal/{0}.png'.format(str(i)))))
     rankups.append(
         np.array(Image.open('static/icon/rankup/{0}.png'.format(str(i)))))
     progress = int(i / total_cards * 100)
-    sys.stdout.write("\r%d%%" % progress)
-    sys.stdout.flush()
-  sys.stdout.write("\n")
+    debug and sys.stdout.write("\r%d%%" % progress)
+    debug and sys.stdout.flush()
+  debug and sys.stdout.write("\n")
 
-def main(path, rarity_set, out=False):
-  global total_time_elapsed
+def crop_image(img):
+    if img.width / img.height > 1.5:
+      context_height = img.height
+      context_width = context_height * 1.5
+      context_img = img.crop((int((img.width-context_width)/2+1), 0, int(img.width-(img.width-context_width)/2), context_height))
+    else:
+        context_width = img.width
+        context_height = context_width / 1.5
+        context_img = img.crop((0, int((img.height-context_height)/2+1), context_width, int(img.height-(img.height-context_height)/2)))
+    return context_img
+
+def main(path, rarity_set, team_page=False, out=False):
+  global total_time_elapsed, debug
   try:
     loading_t = time.time()
-    print("Loading cards...")
+    debug and print("Loading cards...")
     preload_cards()
-    print("Done.")
+    debug and print("Done.")
     time_elapsed = time.time() - loading_t
     total_time_elapsed = time_elapsed
-    print("Time elapsed: {0} seconds".format(time_elapsed))
+    debug and print("Time elapsed: {0} seconds".format(time_elapsed))
   except BaseException:
     sys.exit("Error loading static icon data.")
     return
@@ -227,22 +256,35 @@ def main(path, rarity_set, out=False):
     return
 
   preprocessing_t = time.time()
-  print("Preprocessing image...")
+  debug and print("Preprocessing image...")
   output_path = SCALED_OUTPUT_PATH_PREFIX + os.path.basename(path)
-  scaled_img = rescale_image(img, pixels, OUTPUT_MODE, output_path = output_path)
-  print("Done.")
+
+  if team_page:
+    cropped_img = crop_image(img)
+    w, h = cropped_img.width, cropped_img.height
+    cropped_img = cropped_img.crop((
+                    w*TEAM_IMG_CROP_RATIOS[0],
+                    h*TEAM_IMG_CROP_RATIOS[1],
+                    w*TEAM_IMG_CROP_RATIOS[2],
+                    h*TEAM_IMG_CROP_RATIOS[3]))
+    scaled_img = rescale_image(cropped_img, np.array(cropped_img), OUTPUT_MODE, _ratio=10000, no_crop=True)
+  else:
+    scaled_img = rescale_image(img, pixels, OUTPUT_MODE, output_path = output_path)
+
+
+  debug and print("Done.")
   time_elapsed = time.time() - preprocessing_t
   total_time_elapsed += time_elapsed
-  print("Time elapsed: {0} seconds".format(time.time() - preprocessing_t))
+  debug and print("Time elapsed: {0} seconds".format(time.time() - preprocessing_t))
+
   scaled_pixels = np.array(scaled_img)
-  targets = get_targets(scaled_img, scaled_pixels)
-  team = match_cards(scaled_pixels, targets, rarity_set)
+  if team_page:
+    targets = get_team_targets(scaled_img, scaled_pixels)
+  else:
+    targets = get_targets(scaled_img, scaled_pixels)
+  team = match_cards(scaled_pixels, targets, rarity_set, no_idolized_match=True)
 
   # Print out the team
-  if out:
-    print("")
-    print("===========OUTPUT============")
-    print("")
   i = 0
   file_output = ""
   for member in team:
@@ -270,6 +312,7 @@ def main(path, rarity_set, out=False):
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument("file", help="The path to the screenshot.")
+  parser.add_argument("--team", help="Fast export for team page.", action="store_true")
   parser.add_argument("--ur", help="Includes UR cards in the matching process.", action="store_true")
   parser.add_argument("--ssr", help="Includes SSR cards in the matching process.", action="store_true")
   parser.add_argument("--sr", help="Includes SR cards in the matching process.", action="store_true")
@@ -278,6 +321,7 @@ if __name__ == '__main__':
   parser.add_argument("--all", help="Includes all cards in the matching process.", action="store_true")
   parser.add_argument("--print-out", help="Print out the result.", action="store_true")
   parser.add_argument("--res", help="Calculate proximity vector for every RES pixels. RES should be an integer from 1 to 8, inclusive. Defaults to 4; the highest setting is 1 (most accurate, slowest).", action="store")
+  parser.add_argument("--debug", help="Prints debug messages to stdout.", action="store_true")
   args = parser.parse_args()
 
   if args.res:
@@ -302,8 +346,11 @@ if __name__ == '__main__':
   if args.n:
     rarity_set.add("N")
 
+  debug = args.debug
+
   if len(rarity_set) == 0:
     sys.exit("Must specify at least one rarity!")
 
-  main(args.file, rarity_set, args.print_out)
-  print("Total time elapsed: {0} seconds".format(total_time_elapsed))
+  main(args.file, rarity_set, args.team, args.print_out)
+  if debug:
+    print("Total time elapsed: {0} seconds".format(total_time_elapsed))
