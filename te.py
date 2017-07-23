@@ -303,7 +303,7 @@ def main(path, rarity_set, team_page=False, out=False):
     i += 1
 
   try:
-    file = io.open(JSON_OUTPUT_PATH_PREFIX + os.path.basename(path) + ".out", 'w')
+    file = io.open(JSON_OUTPUT_PATH_PREFIX + os.path.basename(path) + ".out", 'w', encoding = "utf-8")
     file.write(file_output)
     file.close()
   except BaseException:
